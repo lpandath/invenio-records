@@ -7,14 +7,26 @@
 # under the terms of the MIT License; see LICENSE file for more details.
 
 """Base class for dumpers."""
+from __future__ import annotations
 
 from copy import deepcopy
+from typing import TYPE_CHECKING, Any, Type
+
+if TYPE_CHECKING:
+    from ..api import RecordBase
+
+    _generic_data = dict[str, Any]
+    """Please refer to the record's schema for more details.
+
+        Also check
+        :func:`~invenio_records.api.RecordBase.validate`.
+     """
 
 
 class Dumper:
     """Interface for dumpers."""
 
-    def dump(self, record, data):
+    def dump(self, record: RecordBase, data: _generic_data) -> _generic_data:
         """Dump a record that can be used a source document for the search engine.
 
         The job of this method is to create a Python dictionary from the record
@@ -36,14 +48,14 @@ class Dumper:
         data.update(deepcopy(dict(record)))
         return data
 
-    def load(self, data, record_cls):
+    def load(self, data: _generic_data, record_cls: Type[RecordBase]) -> RecordBase:
         """Load a record from the source document of a search engine hit.
 
         The job of this method, is to create a record of type ``record_cls``
         based on the input ``data``.
 
-        :param data: A Python dictionary representing the data to load.
-        :param records_cls: The record class to be constructed.
-        :returns: A instance of ``record_cls``.
+        :param: data: A Python dictionary representing the data to load.
+        :param: records_cls: The record class to be constructed.
+        :returns: An instance of ``record_cls``.
         """
         raise NotImplementedError()

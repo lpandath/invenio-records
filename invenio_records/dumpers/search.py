@@ -10,28 +10,36 @@
 
 Dumper used to dump/load an the body of an Search document.
 """
+from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING, Any, Generator, Type
 from uuid import UUID
 
 import arrow
 import pytz
 from invenio_db import db
-from sqlalchemy.sql.sqltypes import JSON, Boolean, DateTime, Integer, String, Text
+from sqlalchemy.sql.sqltypes import JSON, Boolean, DateTime, Integer, String
 from sqlalchemy.sql.type_api import Variant
 from sqlalchemy_utils.types.uuid import UUIDType
 
 from ..systemfields.model import ModelField
 from .base import Dumper
 
+if TYPE_CHECKING:
+    from flask_sqlalchemy.extension import Model
+
+    from ..api import RecordBase
+    from .base import _generic_data
+
 
 class SearchDumperExt:
     """Interface for Search dumper extensions."""
 
-    def dump(self, record, data):
+    def dump(self, record: RecordBase, data: _generic_data) -> None:
         """Dump the data."""
 
-    def load(self, data, record_cls):
+    def load(self, data: _generic_data, record_cls: Type[RecordBase]) -> None:
         """Load the data.
 
         Reverse the changes made by the dump method.
@@ -41,7 +49,15 @@ class SearchDumperExt:
 class SearchDumper(Dumper):
     """Search source dumper."""
 
-    def __init__(self, extensions=None, model_fields=None):
+    _supported_serialization_types = (
+        str | int | bool | float | datetime | DateTime | UUID
+    )
+
+    def __init__(
+        self,
+        extensions: list[SearchDumperExt] | None = None,
+        model_fields: dict[str, tuple] | None = None,
+    ) -> None:
         """."""
         self._extensions = extensions or []
         self._model_fields = {
@@ -49,19 +65,20 @@ class SearchDumper(Dumper):
             "version_id": ("version_id", int),
             "created": ("created", datetime),
             "updated": ("updated", datetime),
-            # is_deleted is purposely not added (deleted record isnt indexed)
+            # is_deleted is purposely not added (deleted record isn't indexed)
         }
         self._model_fields.update(model_fields or {})
 
     @staticmethod
-    def _sa_type(model_cls, model_field_name):
+    def _sa_type(model_cls: type[Model], model_field_name: str) -> type | None:
         """Introspection of SQLAlchemy column data type.
 
         :param model_cls: The SQLALchemy model.
         :param model_field_name: The name of the field on the SQLAlchemy model.
         """
         try:
-            sa_type = model_cls.__table__.columns[model_field_name].type
+            # type ignore explained: invenio subclasses of Model have __table__ attribute, but not the superclass
+            sa_type = model_cls.__table__.columns[model_field_name].type  # type: ignore[attr-defined]
             sa_type_class = sa_type.__class__
 
             # Deal with variant class
@@ -86,12 +103,11 @@ class SearchDumper(Dumper):
             return None
 
     @staticmethod
-    def _serialize(value, dump_type):
-        """Serialize a value according to it's data type.
+    def _serialize(value: Any, dump_type: Type[_supported_serialization_types]) -> Any:
+        """Serialize a value according to its data type.
 
         :param value: Value to serialize.
-        :param dump_type: Data type use for serialization (supported: str, int,
-            bool, float, datetime, date, uuid).
+        :param dump_type: Data type use for serialization.
         """
         if value is None:
             return value
@@ -100,28 +116,36 @@ class SearchDumper(Dumper):
         elif dump_type in (UUID,):
             return str(value)
         elif dump_type is not None:
-            return dump_type(value)
+            return dump_type(value)  # type: ignore[call-arg]
         return value
 
     @staticmethod
-    def _deserialize(value, dump_type):
-        """Deserialize a value according to it's data type.
+    def _deserialize(
+        value: Any, dump_type: Type[_supported_serialization_types]
+    ) -> Any:
+        """Deserialize a value according to its data type.
 
         :param value: Value to deserialize.
-        :param dump_type: Data type use for deserialization (supported: str,
-            int, bool, float, datetime, date, uuid).
+        :param dump_type: Data type use for deserialization.
         """
         if value is None:
             return value
         if dump_type in (datetime,):
             return arrow.get(value).datetime.replace(tzinfo=None)
         elif dump_type in (UUID,):
-            return dump_type(value)
+            return dump_type(value)  # type: ignore[call-arg]
         elif dump_type is not None:
-            return dump_type(value)
+            return dump_type(value)  # type: ignore[call-arg]
         return value
 
-    def _dump_model_field(self, record, model_field_name, dump, dump_key, dump_type):
+    def _dump_model_field(
+        self,
+        record: RecordBase,
+        model_field_name: str,
+        dump: _generic_data,
+        dump_key: str,
+        dump_type: Type[_supported_serialization_types],
+    ) -> None:
         """Helper method to dump model fields.
 
         :param record: The record being dumped.
@@ -148,8 +172,13 @@ class SearchDumper(Dumper):
         dump[dump_key] = self._serialize(val, dump_type)
 
     def _load_model_field(
-        self, record_cls, model_field_name, dump, dump_key, dump_type
-    ):
+        self,
+        record_cls: Type[RecordBase],
+        model_field_name: str,
+        dump: _generic_data,
+        dump_key: str,
+        dump_type: Type[_supported_serialization_types],
+    ) -> Any:
         """Helper method to load model fields from dump.
 
         :param record_cls: The record class being used for loading.
@@ -175,7 +204,9 @@ class SearchDumper(Dumper):
         return self._deserialize(val, dump_type)
 
     @staticmethod
-    def _iter_modelfields(record_cls):
+    def _iter_modelfields(
+        record_cls: Type[RecordBase],
+    ) -> Generator[ModelField, Any, None]:
         """Internal helper method to extract all model fields."""
         for attr_name in dir(record_cls):
             systemfield = getattr(record_cls, attr_name)
@@ -183,7 +214,7 @@ class SearchDumper(Dumper):
                 if systemfield.dump:
                     yield systemfield
 
-    def dump(self, record, data):
+    def dump(self, record: RecordBase, data: _generic_data) -> _generic_data:
         """Dump a record.
 
         The method adds the following keys (if the record has an associated
@@ -224,8 +255,10 @@ class SearchDumper(Dumper):
 
         return dump_data
 
-    def load(self, dump_data, record_cls):
-        """Load a record from an Search document source.
+    def load(
+        self, dump_data: _generic_data, record_cls: Type[RecordBase]
+    ) -> RecordBase:
+        """Load a record from a Search document source.
 
         The method reverses the changes made during the dump. If a model was
         associated, a model will also be initialized.
