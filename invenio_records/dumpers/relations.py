@@ -10,20 +10,25 @@
 
 Dumper used to dump/load relations to/from a search engine body.
 """
+from typing import TYPE_CHECKING, Any, Type
 
 from ..dictutils import dict_lookup, dict_set
 from .search import SearchDumperExt
+
+if TYPE_CHECKING:
+    from ..api import RecordBase
+    from .base import _generic_data
 
 
 class RelationDumperExt(SearchDumperExt):
     """Dumper for a relations field."""
 
-    def __init__(self, key, fields=None):
+    def __init__(self, key: str, fields: list[str] | None = None) -> None:
         """Initialize the dumper."""
         self.key = key
         self.fields = fields
 
-    def dump(self, record, data):
+    def dump(self, record: RecordBase, data: _generic_data) -> None:
         """Dump relations."""
         relations = getattr(record, self.key)
         relations.dereference(fields=self.fields)
@@ -35,7 +40,7 @@ class RelationDumperExt(SearchDumperExt):
             except KeyError:
                 pass
 
-    def load(self, data, record_cls):
+    def load(self, data: _generic_data, record_cls: Type[RecordBase]) -> None:
         """Load relations."""
         # TODO: figure out what/how to load
         pass
